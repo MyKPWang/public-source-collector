@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/static/admin.css">
+  <title>微信公众号采集</title>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/admin">微信公众号采集</a>
+    <nav aria-label="管理导航">
+      <a href="/admin" data-page="overview">总览</a>
+      <a href="/admin/wechat-auth" data-page="wechat-auth">微信授权</a>
+      <a href="/admin/accounts" data-page="accounts">公众号</a>
+      <a href="/admin/runs" data-page="runs">采集记录</a>
+      <a href="/admin/articles" data-page="articles">文章</a>
+      <a href="/admin/diagnostics" data-page="diagnostics">诊断</a>
+    </nav>
+    <button class="quiet-button" id="logout" type="button">退出</button>
+  </header>
+  <main>
+    <div class="page-heading"><h1 id="title"></h1><div id="page-actions"></div></div>
+    <div id="notice" role="status" aria-live="polite"></div>
+    <section id="content"></section>
+  </main>
+  <script>
+    const csrf = '{{ csrf_token }}';
+    const page = '{{ page_name }}';
+    const content = document.querySelector('#content');
+    const actions = document.querySelector('#page-actions');
+    const notice = document.querySelector('#notice');
+    let renderedAuthSessionId = '';
+    const names = {overview: '总览', 'wechat-auth': '微信授权', accounts: '公众号', runs: '采集记录', articles: '文章', diagnostics: '诊断'};
+    document.querySelector('#title').textContent = names[page];
+    document.querySelector(`[data-page="${page}"]`)?.classList.add('active');
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+    }
+    function formatDate(value) { return value ? new Date(value).toLocaleString('zh-CN', {hour12: false}) : '-'; }
+    function showNotice(message, tone = 'info') { notice.textContent = message; notice.className = tone; }
+    async function api(path, options = {}) {
+      const headers = new Headers(options.headers || {});
+      if (options.method && options.method !== 'GET') headers.set('X-CSRF-Token', csrf);
+      if (options.body) headers.set('Content-Type', 'application/json');
+      const response = await fetch(path, {...options, headers});
+      if (response.status === 401) { location.href = '/admin/login'; throw new Error('未登录'); }
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error?.message || `请求失败 (${response.status})`);
+      }
+      return response.status === 204 ? null : response.json();
+    }
+    function table(headers, rows) {
+      return `<div class="table-wrap"><table><thead><tr>${headers.map(item => `<th>${escapeHtml(item)}</th>`).join('')}</tr></thead><tbody>${rows || '<tr><td class="empty" colspan="99">暂无数据</td></tr>'}</tbody></table></div>`;
+    }
+    function statusTag(value) { return `<span class="tag ${escapeHtml(String(value).toLowerCase())}">${escapeHtml(value)}</span>`; }
+    function renderError(error) { content.innerHTML = `<div class="error-panel">${escapeHtml(error.message)}</div>`; }
+    function commandButton(label, action, attributes = '') { return `<button class="action-button" type="button" data-action="${action}" ${attributes}>${label}</button>`; }
+
+    async function renderOverview() {
+      const data = await api('/api/v1/admin/overview');
+      const batch = data.latest_scheduled_batch;
+      actions.innerHTML = commandButton('采集全部', 'collect-all');
+      content.innerHTML = `
+        <div class="metrics">
+          <div><span>已订阅</span><strong>${data.accounts.total}</strong></div>
+          <div><span>已启用</span><strong>${data.accounts.enabled}</strong></div>
+          <div><span>最近定时批次</span><strong>${batch?.quality || '-'}</strong></div>
+        </div>
+        <section class="section-block"><h2>最近采集</h2>${table(['时间', '触发方式', '状态', '新文章', '错误'], data.recent_runs.map(run => `<tr><td>${formatDate(run.started_at)}</td><td>${escapeHtml(run.trigger)}</td><td>${statusTag(run.status)}</td><td>${run.new_article_count}</td><td>${run.error_count}</td></tr>`).join(''))}</section>`;
+    }
+    async function renderAccounts() {
+      const [data, searchData] = await Promise.all([
+        api('/api/v1/admin/accounts?include_archived=true'),
+        api('/api/v1/admin/account-searches/latest'),
+      ]);
+      actions.innerHTML = commandButton('采集所选', 'collect-selected');
+      const rows = data.accounts.map(item => `<tr>
+        <td>${item.archived_at ? '' : `<input type="checkbox" name="account-id" value="${escapeHtml(item.id)}" aria-label="选择 ${escapeHtml(item.name)}">`}</td>
+        <td><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.source_account_id)}</small></td>
+        <td>${item.enabled ? statusTag('启用') : statusTag('停用')}</td>
+        <td>${item.display_order}</td>
+        <td>${item.archived_at ? commandButton('恢复', 'restore', `data-id="${escapeHtml(item.id)}"`) : commandButton('归档', 'archive', `data-id="${escapeHtml(item.id)}"`)}</td>
+      </tr>`).join('');
+      const search = searchData.search;
+      const searchActive = search && ['queued', 'waiting', 'running'].includes(search.status);
+      const candidateRows = (search?.candidates || []).map(candidate => `<tr>
+        <td><input type="radio" name="search-candidate" value="${escapeHtml(candidate.id)}" aria-label="选择 ${escapeHtml(candidate.name)}"></td>
+        <td>${candidate.avatar_url ? `<img class="account-avatar" src="${escapeHtml(candidate.avatar_url)}" alt="">` : ''}</td>
+        <td><strong>${escapeHtml(candidate.name)}</strong><small>${escapeHtml(candidate.alias || '未设置微信号')}</small></td>
+      </tr>`).join('');
+      const searchResult = search ? `<section class="section-block search-result"><div class="search-status"><span>${statusTag(search.status)}</span><span>${escapeHtml(search.message || '-')}</span></div>${search.status === 'succeeded' ? `<div class="search-results-heading"><h2>候选公众号（${search.candidate_count} 个）</h2>${commandButton('添加所选', 'subscribe-selected-search', `data-search-id="${escapeHtml(search.id)}"`)}</div>${table(['选择', '头像', '公众号'], candidateRows)}` : ''}</section>` : '';
+      content.innerHTML = `
+        <section class="section-block form-section"><h2>搜索并添加公众号</h2>
+          <form id="account-search-form" class="account-search-form">
+            <label>公众号名称<input required name="query" maxlength="100" placeholder="例如：量子位"></label>
+            <button class="primary-button" type="submit">搜索</button>
+          </form>
+        </section>
+        ${searchResult}
+        <section class="section-block"><h2>订阅列表</h2>${table(['选择', '公众号', '状态', '排序', '操作'], rows)}</section>`;
+      if (searchActive) window.setTimeout(() => { if (page === 'accounts') renderAccounts().catch(renderError); }, 2000);
+    }
+    async function renderWechatAuth() {
+      const data = await api('/api/v1/admin/wechat-auth');
+      const login = data.login_session;
+      const desktop = data.delivery_mode === 'desktop';
+      const hasCredentials = data.credential_status === 'available';
+      actions.innerHTML = commandButton(
+        hasCredentials ? '切换微信账号' : (desktop ? '开始微信授权' : '生成二维码'),
+        'start-login',
+      );
+      const active = login && ['creating', 'waiting_scan', 'scanned', 'confirming', 'validating'].includes(login.status);
+      const imageAvailable = login && ['waiting_scan', 'scanned', 'confirming', 'validating'].includes(login.status);
+      const existingQr = content.querySelector('.qr-image');
+      const existingDesktopState = content.querySelector('.desktop-login-status');
+      if (active && renderedAuthSessionId === login.id && (existingQr || existingDesktopState)) {
+        content.querySelector('.auth-status').className = `tag ${escapeHtml(login.status)} auth-status`;
+        content.querySelector('.auth-status').textContent = login.status;
+        content.querySelector('.auth-message').textContent = login.message || '-';
+        content.querySelector('.auth-expiry').textContent = formatDate(login.expires_at);
+        window.setTimeout(() => { if (page === 'wechat-auth') renderWechatAuth().catch(renderError); }, 2000);
+        return;
+      }
+      const image = imageAvailable ? `<img class="qr-image" src="/api/v1/admin/login-sessions/${encodeURIComponent(login.id)}/qr" alt="微信授权二维码">` : '<div class="qr-placeholder"></div>';
+      const cancel = active ? commandButton('取消', 'cancel-login', `data-id="${escapeHtml(login.id)}"`) : '';
+      renderedAuthSessionId = active ? login.id : '';
+      const desktopState = '<div class="desktop-login-status"><strong>官方微信登录页已在部署机 Chrome 中打开</strong><span>请在该窗口内完成扫码和手机确认。</span></div>';
+      const visual = desktop ? desktopState : `<div class="qr-frame">${image}</div>`;
+      const sessionState = login ? `<div class="auth-state">${visual}<div><span class="tag ${escapeHtml(login.status)} auth-status">${escapeHtml(login.status)}</span><p class="auth-message">${escapeHtml(login.message || '-')}</p><small class="auth-expiry">${formatDate(login.expires_at)}</small>${cancel}</div></div>` : '<div class="empty-state">尚未发起微信授权</div>';
+      const switchHint = hasCredentials ? '<p class="auth-help">完成新账号的扫码确认后，系统才会替换当前凭据；取消或超时不会影响当前采集账号。</p>' : '';
+      content.innerHTML = `<section class="section-block"><div class="auth-summary"><span>当前凭据</span>${statusTag(data.credential_status)}</div>${switchHint}${sessionState}</section>`;
+      if (active) window.setTimeout(() => { if (page === 'wechat-auth') renderWechatAuth().catch(renderError); }, 2000);
+    }
+    async function renderRuns() {
+      const data = await api('/api/v1/admin/collection-runs');
+      content.innerHTML = `<section class="section-block">${table(['开始时间', '触发方式', '状态', '新文章', '已处理请求', '错误'], data.runs.map(run => `<tr><td>${formatDate(run.started_at)}</td><td>${escapeHtml(run.trigger)}</td><td>${statusTag(run.status)}</td><td>${run.new_article_count}</td><td>${run.request_count}</td><td>${run.error_count}</td></tr>`).join(''))}</section>`;
+    }
+    async function renderArticles() {
+      const data = await api('/api/v1/admin/articles');
+      content.innerHTML = `<section class="section-block">${table(['发布时间', '公众号', '标题', '首次发现'], data.articles.map(article => `<tr><td>${formatDate(article.published_at)}</td><td>${escapeHtml(article.account_name)}</td><td><a href="${escapeHtml(article.url)}" target="_blank" rel="noreferrer">${escapeHtml(article.title)}</a></td><td>${formatDate(article.first_seen_at)}</td></tr>`).join(''))}</section>`;
+    }
+    async function renderDiagnostics() {
+      const [diagnostics, events] = await Promise.all([api('/api/v1/admin/diagnostics'), api('/api/v1/admin/events')]);
+      const requestRows = diagnostics.requests.map(item => `<tr><td>${formatDate(item.created_at)}</td><td>${escapeHtml(item.endpoint)}</td><td>${escapeHtml(item.status)}</td><td>${escapeHtml(item.request_id)}</td></tr>`).join('');
+      const eventRows = events.events.map(item => `<tr><td>${formatDate(item.created_at)}</td><td>${escapeHtml(item.event_type)}</td><td>${escapeHtml(item.level)}</td><td>${escapeHtml(item.message)}</td></tr>`).join('');
+      content.innerHTML = `<section class="section-block"><h2>最近请求</h2>${table(['时间', '端点', '状态', '请求 ID'], requestRows)}</section><section class="section-block"><h2>最近事件</h2>${table(['时间', '事件', '级别', '信息'], eventRows)}</section>`;
+    }
+    async function submitCommand(accountIds) {
+      const path = accountIds ? '/api/v1/admin/collection-commands' : '/api/v1/admin/collection-runs';
+      const payload = accountIds ? {account_ids: accountIds} : undefined;
+      const result = await api(path, {method: 'POST', headers: {'Idempotency-Key': crypto.randomUUID()}, body: payload ? JSON.stringify(payload) : undefined});
+      showNotice(result.reused ? '已存在相同采集命令。' : '采集命令已进入队列。', 'success');
+    }
+    content.addEventListener('submit', async event => {
+      if (event.target.id !== 'account-search-form') return;
+      event.preventDefault();
+      const form = new FormData(event.target);
+      try {
+        await api('/api/v1/admin/account-searches', {method: 'POST', body: JSON.stringify({query: form.get('query')})});
+        showNotice('搜索已进入请求队列。', 'success'); await renderAccounts();
+      } catch (error) { showNotice(error.message, 'error'); }
+    });
+    document.addEventListener('click', async event => {
+      const button = event.target.closest('button[data-action]');
+      if (!button) return;
+      try {
+        if (button.dataset.action === 'collect-all') await submitCommand();
+        if (button.dataset.action === 'start-login') {
+          const auth = await api('/api/v1/admin/wechat-auth');
+          if (auth.credential_status === 'available' && !window.confirm('完成新账号扫码并确认后，当前采集账号会被替换。继续吗？')) return;
+          await api('/api/v1/admin/login-sessions', {method: 'POST', body: JSON.stringify({channel: 'local_web'})});
+          showNotice(auth.credential_status === 'available' ? '请在部署机 Chrome 中扫码新账号；完成确认后会自动切换。' : '微信授权已在部署机 Chrome 中打开。', 'success');
+          await renderWechatAuth();
+        }
+        if (button.dataset.action === 'collect-selected') {
+          const ids = [...document.querySelectorAll('input[name="account-id"]:checked')].map(input => input.value);
+          if (!ids.length) throw new Error('请先选择公众号');
+          await submitCommand(ids);
+        }
+        if (button.dataset.action === 'subscribe-selected-search') {
+          const selected = document.querySelector('input[name="search-candidate"]:checked');
+          if (!selected) throw new Error('请选择一个公众号');
+          const result = await api(`/api/v1/admin/account-searches/${encodeURIComponent(button.dataset.searchId)}/subscribe`, {method: 'POST', body: JSON.stringify({candidate_id: selected.value})});
+          showNotice(`${result.name} 已添加。`, 'success'); await renderAccounts();
+        }
+        if (button.dataset.action === 'archive') { await api(`/api/v1/admin/accounts/${button.dataset.id}/archive`, {method: 'POST'}); showNotice('公众号已归档。', 'success'); await renderAccounts(); }
+        if (button.dataset.action === 'restore') { await api(`/api/v1/admin/accounts/${button.dataset.id}/restore`, {method: 'POST'}); showNotice('公众号已恢复。', 'success'); await renderAccounts(); }
+        if (button.dataset.action === 'cancel-login') { await api(`/api/v1/admin/login-sessions/${button.dataset.id}/cancel`, {method: 'POST'}); showNotice('授权已取消。', 'success'); await renderWechatAuth(); }
+      } catch (error) { showNotice(error.message, 'error'); }
+    });
+    document.querySelector('#logout').addEventListener('click', async () => { await api('/api/v1/admin/session', {method: 'DELETE'}); location.href = '/admin/login'; });
+    ({overview: renderOverview, 'wechat-auth': renderWechatAuth, accounts: renderAccounts, runs: renderRuns, articles: renderArticles, diagnostics: renderDiagnostics}[page])().catch(renderError);
+  </script>
+</body>
+</html>

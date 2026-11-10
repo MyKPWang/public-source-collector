@@ -1,0 +1,8 @@
+[Unit]
+Description=Submit daily WeChat List Collector batch
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/wechat-list-collector
+EnvironmentFile=/etc/wechat-list-collector.env
+ExecStart=/opt/wechat-list-collector/.venv/bin/wechat-list-collector --config /etc/wechat-list-collector.toml enqueue collect-all

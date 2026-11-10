@@ -1,0 +1,256 @@
+# A source is enabled only after its listing page has been validated to expose
+# title, canonical URL, publish time and summary without fetching article pages.
+# Copy this file to public-sources.toml and run `sources sync`.
+
+[[sources]]
+slug = "ifanr"
+name = "爱范儿"
+homepage_url = "https://www.ifanr.com/"
+enabled = true
+
+  [[sources.endpoints]]
+  key = "main-rss"
+  kind = "rss"
+  list_url = "https://www.ifanr.com/feed"
+  enabled = true
+  minimum_interval_seconds = 900
+  max_items = 80
+
+[[sources]]
+slug = "google-ai"
+name = "Google AI"
+homepage_url = "https://blog.google/technology/ai/"
+enabled = true
+
+  [[sources.endpoints]]
+  key = "official-rss"
+  kind = "rss"
+  list_url = "https://blog.google/technology/ai/rss/"
+  enabled = true
+  minimum_interval_seconds = 3600
+  max_items = 50
+
+[[sources]]
+slug = "openai"
+name = "OpenAI News"
+homepage_url = "https://openai.com/news/"
+enabled = true
+
+  [[sources.endpoints]]
+  key = "official-rss"
+  kind = "rss"
+  list_url = "https://openai.com/news/rss.xml"
+  enabled = true
+  minimum_interval_seconds = 3600
+  max_items = 50
+
+[[sources]]
+slug = "infoq"
+name = "InfoQ AI Briefs"
+homepage_url = "https://www.infoq.cn/aibriefs"
+enabled = true
+
+  [[sources.endpoints]]
+  key = "ai-briefs"
+  kind = "browser"
+  list_url = "https://www.infoq.cn/aibriefs"
+  enabled = true
+  minimum_interval_seconds = 1800
+  max_items = 80
+
+[[sources]]
+slug = "qbitai"
+name = "量子位"
+homepage_url = "https://www.qbitai.com/tag/ai"
+enabled = true
+
+  [[sources.endpoints]]
+  key = "ai"
+  kind = "browser"
+  list_url = "https://www.qbitai.com/tag/ai"
+  enabled = true
+  minimum_interval_seconds = 1800
+  max_items = 80
+
+[[sources]]
+slug = "huxiu"
+name = "虎嗅 AI 资讯"
+homepage_url = "https://www.huxiu.com/ainews/"
+enabled = true
+
+  [[sources.endpoints]]
+  key = "ai-news"
+  kind = "browser"
+  list_url = "https://www.huxiu.com/ainews/"
+  enabled = true
+  minimum_interval_seconds = 1800
+  max_items = 20
+
+[[sources]]
+slug = "aibase"
+name = "AIBase 新闻"
+homepage_url = "https://news.aibase.com/zh/news"
+enabled = true
+
+  [[sources.endpoints]]
+  key = "news"
+  kind = "browser"
+  list_url = "https://news.aibase.com/zh/news"
+  enabled = true
+  minimum_interval_seconds = 1800
+  max_items = 20
+
+[[sources]]
+slug = "huawei-developer"
+name = "HarmonyOS 开发者"
+homepage_url = "https://developer.huawei.com/consumer/cn/information/releases"
+enabled = false
+
+  [[sources.endpoints]]
+  key = "releases"
+  kind = "browser"
+  list_url = "https://developer.huawei.com/consumer/cn/information/releases"
+  enabled = false
+  minimum_interval_seconds = 3600
+  max_items = 50
+
+[[sources]]
+slug = "android-developers"
+name = "Android Developers"
+homepage_url = "https://developer.android.com/blog/"
+enabled = true
+
+  [[sources.endpoints]]
+  key = "blog"
+  kind = "browser"
+  list_url = "https://developer.android.com/blog/"
+  enabled = true
+  minimum_interval_seconds = 3600
+  max_items = 50
+
+[[sources]]
+slug = "aiera"
+name = "新智元"
+homepage_url = "https://aiera.com.cn/"
+enabled = true
+
+  [[sources.endpoints]]
+  key = "home"
+  kind = "browser"
+  list_url = "https://aiera.com.cn/"
+  enabled = true
+  minimum_interval_seconds = 1800
+  max_items = 80
+
+[[sources]]
+slug = "jiqizhixin"
+name = "机器之心"
+homepage_url = "https://www.jiqizhixin.com/industry"
+# The collector parses only the list JSON requested by this public page itself.
+enabled = true
+
+  [[sources.endpoints]]
+  key = "industry"
+  kind = "browser_network"
+  list_url = "https://www.jiqizhixin.com/articles/"
+  enabled = true
+  minimum_interval_seconds = 1800
+  max_items = 20
+
+[[sources]]
+slug = "zhidx"
+name = "智东西"
+homepage_url = "https://zhidx.com/p/category/%E4%BA%BA%E5%B7%A5%E6%99%BA%E8%83%BD"
+enabled = true
+
+  [[sources.endpoints]]
+  key = "ai"
+  kind = "browser"
+  list_url = "https://zhidx.com/p/category/%E4%BA%BA%E5%B7%A5%E6%99%BA%E8%83%BD"
+  enabled = true
+  minimum_interval_seconds = 1800
+  max_items = 80
+
+[[sources]]
+slug = "apple-developer"
+name = "Apple Developer"
+homepage_url = "https://developer.apple.com/news/"
+enabled = true
+
+  [[sources.endpoints]]
+  key = "news"
+  kind = "browser"
+  list_url = "https://developer.apple.com/news/"
+  enabled = true
+  minimum_interval_seconds = 3600
+  max_items = 80
+
+[[sources]]
+slug = "seed"
+name = "字节 Seed"
+homepage_url = "https://seed.bytedance.com/zh/blog"
+enabled = false
+
+  [[sources.endpoints]]
+  key = "blog"
+  kind = "browser"
+  list_url = "https://seed.bytedance.com/zh/blog"
+  enabled = false
+  minimum_interval_seconds = 3600
+  max_items = 50
+
+[[sources]]
+slug = "qwen"
+name = "千问"
+homepage_url = "https://qwen.ai/research"
+enabled = true
+
+  [[sources.endpoints]]
+  key = "research"
+  kind = "browser_network"
+  list_url = "https://qwen.ai/research"
+  enabled = true
+  minimum_interval_seconds = 3600
+  max_items = 50
+
+[[sources]]
+slug = "tongyi"
+name = "通义"
+homepage_url = "https://tongyi.aliyun.com/news"
+enabled = false
+
+  [[sources.endpoints]]
+  key = "news"
+  kind = "browser"
+  list_url = "https://tongyi.aliyun.com/news"
+  enabled = false
+  minimum_interval_seconds = 3600
+  max_items = 50
+
+[[sources]]
+slug = "doubao-research"
+name = "豆包大模型"
+homepage_url = "https://research.doubao.com/zh/blog"
+enabled = false
+
+  [[sources.endpoints]]
+  key = "blog"
+  kind = "browser"
+  list_url = "https://research.doubao.com/zh/blog"
+  enabled = false
+  minimum_interval_seconds = 3600
+  max_items = 50
+
+[[sources]]
+slug = "bytedance-tech"
+name = "字节跳动技术团队"
+homepage_url = "https://developer.volcengine.com/user/2772312065061673"
+enabled = false
+
+  [[sources.endpoints]]
+  key = "profile"
+  kind = "browser"
+  list_url = "https://developer.volcengine.com/user/2772312065061673"
+  enabled = false
+  minimum_interval_seconds = 3600
+  max_items = 50

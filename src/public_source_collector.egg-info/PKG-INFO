@@ -1,0 +1,22 @@
+Metadata-Version: 2.4
+Name: public-source-collector
+Version: 0.1.0
+Summary: A traceable, list-only public technology news collector
+Requires-Python: >=3.11
+License-File: NOTICE.md
+Requires-Dist: requests<3,>=2.31
+Requires-Dist: feedparser<7,>=6.0.11
+Requires-Dist: SQLAlchemy<3,>=2.0
+Requires-Dist: alembic<2,>=1.13
+Requires-Dist: fastapi<1,>=0.115
+Requires-Dist: uvicorn<1,>=0.30
+Requires-Dist: pydantic<3,>=2.8
+Requires-Dist: jinja2<4,>=3.1
+Requires-Dist: cryptography<51,>=43
+Requires-Dist: keyring<26,>=25
+Requires-Dist: httpx2<3,>=2
+Requires-Dist: itsdangerous<3,>=2.2
+Requires-Dist: playwright<2,>=1.55
+Provides-Extra: detail-enrichment
+Requires-Dist: crawl4ai<1,>=0.9; extra == "detail-enrichment"
+Dynamic: license-file

@@ -1,0 +1,11 @@
+[Unit]
+Description=Schedule daily WeChat List Collector batch
+
+[Timer]
+OnCalendar=*-*-* 23:50:00
+RandomizedDelaySec=120
+Persistent=true
+Unit=wechat-list-collector-enqueue.service
+
+[Install]
+WantedBy=timers.target

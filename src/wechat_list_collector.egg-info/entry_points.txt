@@ -1,0 +1,2 @@
+[console_scripts]
+wechat-list-collector = wechat_list_collector.cli:main

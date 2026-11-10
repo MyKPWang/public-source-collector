@@ -1,0 +1,5 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/static/admin.css"><title>管理登录</title></head>
+<body class="login-body"><main class="login-panel"><h1>微信公众号采集管理</h1><label>管理员密码<input id="password" type="password" autocomplete="current-password"></label><button id="login">登录</button><p id="message"></p></main><script>
+document.querySelector('#login').onclick = async () => { const r = await fetch('/api/v1/admin/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:document.querySelector('#password').value})}); if(r.ok){ location.href='/admin'; } else { document.querySelector('#message').textContent='登录失败'; } };
+</script></body></html>

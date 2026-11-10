@@ -1,0 +1,9 @@
+[Unit]
+Description=Collect configured public technology-news lists
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/wechat-list-collector
+EnvironmentFile=/etc/wechat-list-collector.env
+ExecStart=/opt/wechat-list-collector/.venv/bin/wechat-list-collector --config /etc/wechat-list-collector.toml sources collect --scheduled

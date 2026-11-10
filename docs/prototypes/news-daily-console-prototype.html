@@ -1,0 +1,133 @@
+<!doctype html>
+<!-- PROTOTYPE ONLY. Question: which information hierarchy makes a local news-daily workflow easiest to operate? Variants switch through ?variant=A|B|C. -->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>资讯日报控制台 - 交互原型</title>
+  <link rel="icon" href="data:,">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    :root { --ink:#172033; --muted:#667085; --line:#d9e0ea; --panel:#fff; --page:#f5f7fa; --blue:#1463d9; --blue-soft:#eaf2ff; --green:#177245; --green-soft:#e8f6ee; --amber:#9a5b00; --amber-soft:#fff3d9; --red:#b42318; --red-soft:#fef0ef; --nav:#172033; --radius:6px; font-family:Inter,"PingFang SC","Microsoft YaHei",system-ui,sans-serif; color:var(--ink); }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--page); font-size:14px; line-height:1.45; }
+    button { font:inherit; cursor:pointer; }
+    .app { min-height:100vh; padding-bottom:76px; }
+    .topbar { height:56px; padding:0 24px; display:flex; align-items:center; justify-content:space-between; background:#fff; border-bottom:1px solid var(--line); }
+    .brand { display:flex; align-items:center; gap:10px; font-weight:700; font-size:16px; }
+    .brand-mark { display:grid; place-items:center; width:25px; height:25px; color:white; background:var(--blue); border-radius:5px; }
+    .top-meta { display:flex; align-items:center; gap:18px; color:var(--muted); font-size:12px; }
+    .dot { width:8px; height:8px; border-radius:50%; background:#2e9b61; display:inline-block; margin-right:5px; }
+    .shell { max-width:1500px; margin:0 auto; display:grid; grid-template-columns:208px minmax(0,1fr); min-height:calc(100vh - 56px); }
+    .side { padding:22px 12px; border-right:1px solid var(--line); }
+    .nav-label { color:var(--muted); font-size:11px; margin:0 12px 8px; letter-spacing:.04em; }
+    .nav-item { display:flex; align-items:center; gap:10px; width:100%; padding:9px 11px; background:none; color:#475467; border:0; border-radius:5px; text-align:left; margin:2px 0; }
+    .nav-item.active { background:var(--blue-soft); color:#134eaa; font-weight:650; }
+    .main { padding:28px 30px 48px; min-width:0; }
+    .page-head { display:flex; justify-content:space-between; gap:24px; align-items:flex-start; margin-bottom:24px; }
+    h1 { font-size:22px; margin:0 0 4px; letter-spacing:0; }
+    h2 { font-size:16px; margin:0; }
+    h3 { font-size:14px; margin:0; }
+    .sub { color:var(--muted); margin:0; }
+    .btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:34px; padding:0 12px; color:#344054; background:#fff; border:1px solid #cbd5e1; border-radius:5px; }
+    .btn:hover { border-color:#9fb6d8; }
+    .btn.primary { color:#fff; background:var(--blue); border-color:var(--blue); }
+    .btn:disabled { cursor:not-allowed; opacity:.52; }
+    .btn.icon { width:34px; padding:0; }
+    .alert { display:flex; gap:10px; align-items:flex-start; padding:11px 13px; border:1px solid #ecd39a; background:var(--amber-soft); border-radius:var(--radius); margin-bottom:18px; color:#704400; }
+    .alert strong { color:#5d3a00; }
+    .metric-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:12px; margin-bottom:22px; }
+    .metric { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:15px; min-height:102px; }
+    .metric .label { color:var(--muted); font-size:12px; }
+    .metric .value { font-size:24px; font-weight:700; margin:8px 0 3px; }
+    .metric small { color:var(--muted); }
+    .metric .up { color:var(--green); }
+    .grid { display:grid; grid-template-columns:minmax(0,1.62fr) minmax(300px,.84fr); gap:16px; }
+    .panel { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; }
+    .panel-head { min-height:49px; padding:0 16px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; gap:10px; }
+    .panel-body { padding:15px 16px; }
+    .muted { color:var(--muted); }
+    .status { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; font-size:12px; }
+    .status::before { content:""; width:7px; height:7px; border-radius:50%; background:#98a2b3; }
+    .status.ok { color:var(--green); }.status.ok::before { background:#28a269; }.status.partial { color:var(--amber); }.status.partial::before { background:#e59c27; }.status.failed { color:var(--red); }.status.failed::before { background:#d92d20; }.status.running { color:#175cd3; }.status.running::before { background:#2e90fa; }.status.waiting { color:#475467; }
+    table { width:100%; border-collapse:collapse; table-layout:fixed; }
+    th, td { padding:11px 12px; border-bottom:1px solid #edf0f4; vertical-align:middle; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    th { font-weight:500; font-size:12px; color:var(--muted); background:#fbfcfe; }
+    tr:last-child td { border-bottom:0; }
+    .link { color:#175cd3; text-decoration:none; cursor:pointer; }
+    .source-list { list-style:none; margin:0; padding:0; }
+    .source-list li { padding:12px 0; border-bottom:1px solid #edf0f4; display:grid; grid-template-columns:1fr auto; gap:8px; }
+    .source-list li:last-child { border-bottom:0; }
+    .source-list p { margin:3px 0 0; color:var(--muted); font-size:12px; }
+    .progress { height:6px; background:#e9edf3; border-radius:99px; overflow:hidden; }
+    .progress > span { display:block; height:100%; border-radius:99px; background:var(--blue); }
+    .timeline { margin:0; padding:0; list-style:none; }
+    .timeline li { position:relative; padding:0 0 18px 18px; color:#475467; }
+    .timeline li::before { position:absolute; left:0; top:5px; content:""; width:7px; height:7px; border-radius:50%; background:#2e90fa; }.timeline li.ok::before{background:#2e9b61}.timeline li.warn::before{background:#e59c27}
+    .timeline time { color:#98a2b3; display:block; font-size:12px; }
+    .prototype-bar { position:fixed; z-index:20; bottom:16px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:8px; padding:7px 9px; color:#fff; background:#101828; border:1px solid #475467; border-radius:8px; box-shadow:0 12px 32px rgba(16,24,40,.25); }
+    .prototype-bar span { min-width:158px; text-align:center; font-size:12px; }.prototype-bar button{height:30px;width:30px;border:0;border-radius:4px;background:#344054;color:#fff;display:grid;place-items:center}.prototype-bar button:hover{background:#475467}
+    .proto-note { font-size:11px; color:#d0d5dd; border-left:1px solid #667085; padding-left:8px; }
+    .hidden { display:none!important; }
+
+    /* Variant B: task queue is the primary object. */
+    .command-layout { max-width:1180px; margin:0 auto; }
+    .command-hero { background:#172033; color:#fff; border-radius:8px; padding:24px; display:grid; grid-template-columns:1fr auto; gap:16px; margin-bottom:18px; }.command-hero p{color:#cbd5e1;margin:5px 0 0}.command-hero .btn{align-self:center}.command-hero .btn.primary{background:#fff;color:#134eaa;border-color:#fff}
+    .task-strip { display:grid; grid-template-columns:repeat(4,1fr); border:1px solid #c9d5e7; background:#fff; border-radius:6px; overflow:hidden; margin-bottom:18px; }.task-step { padding:13px 14px; border-right:1px solid #e5eaf1; min-height:78px; }.task-step:last-child{border-right:0}.task-step b{display:block;margin-bottom:4px}.task-step small{color:var(--muted)}.task-step.active{background:var(--blue-soft);box-shadow:inset 0 3px 0 var(--blue)}
+    .command-grid { display:grid; grid-template-columns:1fr 360px; gap:16px; }.job-row{display:grid;grid-template-columns:92px 1fr 130px 114px;gap:12px;padding:14px 16px;border-bottom:1px solid #edf0f4;align-items:center}.job-row:last-child{border-bottom:0}.job-row .job-name{font-weight:650}.job-row small{display:block;color:var(--muted);margin-top:2px}
+
+    /* Variant C: review/editor is the primary object. */
+    .review-shell { max-width:1480px; margin:0 auto; }.review-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.review-meta{display:flex;gap:14px;color:var(--muted);font-size:12px}.review-layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(410px,.85fr);gap:14px;align-items:start}.review-table .title-cell{white-space:normal;line-height:1.35}.review-table .title-cell b{display:block;font-weight:600}.review-table .title-cell small{display:block;color:var(--muted);margin-top:3px}.preview{background:#eef2f6;padding:18px;min-height:610px}.mobile-paper{width:min(100%,340px);margin:0 auto;background:#fff;border:1px solid #d5dce7;box-shadow:0 3px 11px rgba(16,24,40,.12);padding:20px 18px}.mobile-paper h2{font-size:18px;line-height:1.35}.mobile-paper .date{font-size:12px;color:#98a2b3;margin:7px 0 16px}.paper-item{padding:14px 0;border-top:1px solid #edf0f4}.paper-item b{display:block;font-size:13px;line-height:1.4}.paper-item p{font-size:12px;color:#667085;line-height:1.55;margin:7px 0 0}.review-actions{display:flex;gap:8px}.row-select{width:16px;height:16px;accent-color:var(--blue)}
+    .drawer { position:fixed; right:18px; bottom:80px; z-index:15; width:342px; background:#fff; border:1px solid #cbd5e1; border-radius:7px; box-shadow:0 18px 38px rgba(16,24,40,.22); }.drawer .panel-head{background:#fbfcfe}.drawer .panel-body{max-height:330px;overflow:auto}.drawer-close{border:0;background:none;color:#667085;font-size:18px}.event{padding:9px 0;border-bottom:1px solid #edf0f4}.event:last-child{border-bottom:0}.event strong{font-size:12px}.event span{display:block;color:#667085;font-size:12px;margin-top:2px}
+    .toast { position:fixed; z-index:30; top:70px; right:24px; padding:11px 13px; display:none; color:#075c36; background:#ecfdf3; border:1px solid #abefc6; border-radius:6px; box-shadow:0 6px 18px rgba(16,24,40,.12); }.toast.show{display:block}
+    @media (max-width: 1060px) { .metric-grid{grid-template-columns:repeat(3,1fr)}.grid,.command-grid,.review-layout{grid-template-columns:1fr}.side{display:none}.shell{grid-template-columns:1fr}.main{padding:24px 18px}.preview{min-height:0}.top-meta{display:none} }
+    @media (max-width: 680px) { .topbar{padding:0 14px}.main{padding:20px 12px 80px}.page-head,.command-hero{display:block}.page-head .btn,.command-hero .btn{margin-top:12px}.metric-grid{grid-template-columns:repeat(2,1fr)}.metric{min-height:90px}.task-strip{grid-template-columns:1fr 1fr}.task-step:nth-child(2){border-right:0}.job-row{grid-template-columns:1fr;gap:3px}.prototype-bar span{min-width:100px}.proto-note{display:none}.drawer{left:12px;right:12px;width:auto} }
+  </style>
+</head>
+<body>
+  <div id="toast" class="toast" role="status">已创建演示任务。真实实现会先写入持久化任务队列。</div>
+  <main class="app">
+    <header class="topbar"><div class="brand"><span class="brand-mark"><i data-lucide="newspaper" size="15"></i></span>资讯日报控制台</div><div class="top-meta"><span><i class="dot"></i>服务正常</span><span>本机管理员</span><button class="btn icon" title="查看操作日志" onclick="toggleDrawer()"><i data-lucide="activity" size="16"></i></button></div></header>
+
+    <section id="variant-A" class="variant">
+      <div class="shell"><aside class="side"><p class="nav-label">工作台</p><button class="nav-item active"><i data-lucide="layout-dashboard" size="16"></i>总览</button><button class="nav-item"><i data-lucide="files" size="16"></i>日报中心</button><p class="nav-label" style="margin-top:22px">运营</p><button class="nav-item"><i data-lucide="radio-tower" size="16"></i>来源与采集</button><button class="nav-item"><i data-lucide="send" size="16"></i>草稿记录</button><button class="nav-item"><i data-lucide="scroll-text" size="16"></i>运行与日志</button><p class="nav-label" style="margin-top:22px">系统</p><button class="nav-item"><i data-lucide="settings" size="16"></i>设置</button></aside>
+        <div class="main"><div class="page-head"><div><h1>总览</h1><p class="sub">2026 年 9 月 8 日，周二。先确认来源健康，再生成日报。</p></div><button class="btn primary" onclick="startDemo()"><i data-lucide="sparkles" size="16"></i>生成今日日报</button></div>
+          <div class="alert"><i data-lucide="triangle-alert" size="17"></i><div><strong>1 个来源需要关注</strong><br><span>华为开发者 RSS 上次采集字段缺失；不会阻塞日报生成，已降级使用其余 15 个来源。</span></div><a class="link" style="margin-left:auto;white-space:nowrap">查看来源</a></div>
+          <div class="metric-grid"><div class="metric"><div class="label">上次成功采集</div><div class="value">23:54</div><small class="up">16 / 17 来源完成</small></div><div class="metric"><div class="label">今日缓存文章</div><div class="value">110</div><small>新增 38，已自动去重</small></div><div class="metric"><div class="label">最近日报</div><div class="value">9/7</div><small>版本 2，已上传草稿</small></div><div class="metric"><div class="label">待审核日报</div><div class="value">1</div><small>9/8 生成任务草稿</small></div><div class="metric"><div class="label">近 24h 异常来源</div><div class="value">1</div><small class="up">较昨日减少 2 个</small></div></div>
+          <div class="grid"><section class="panel"><div class="panel-head"><h2>最近日报</h2><a class="link">查看全部</a></div><table><thead><tr><th style="width:25%">日报</th><th>生成结果</th><th style="width:16%">版本</th><th style="width:18%">草稿状态</th><th style="width:14%">操作</th></tr></thead><tbody><tr><td><a class="link">AI 资讯日报 09/08</a><br><small class="muted">09:00 - 现在</small></td><td>16 入选 / 4 待复核</td><td>v1</td><td><span class="status waiting">待生成</span></td><td><button class="btn" onclick="startDemo()">生成</button></td></tr><tr><td><a class="link">AI 资讯日报 09/07</a><br><small class="muted">09/06 00:00 - 09/07 23:50</small></td><td>15 入选 / 20 待复核</td><td>v2</td><td><span class="status ok">已上传草稿</span></td><td><button class="btn icon" title="打开详情"><i data-lucide="arrow-up-right" size="15"></i></button></td></tr><tr><td><a class="link">AI 资讯日报 09/06</a><br><small class="muted">09/05 00:00 - 09/06 23:50</small></td><td>13 入选 / 12 待复核</td><td>v1</td><td><span class="status ok">已上传草稿</span></td><td><button class="btn icon" title="打开详情"><i data-lucide="arrow-up-right" size="15"></i></button></td></tr></tbody></table></section>
+            <aside class="panel"><div class="panel-head"><h2>来源关注项</h2><a class="link">全部来源</a></div><div class="panel-body"><ul class="source-list"><li><div><b>华为开发者 RSS</b><p>字段缺失: 摘要；上次成功 09/07 23:54</p></div><span class="status partial">部分结果</span></li><li><div><b>机器之心</b><p>下次允许采集: 09/08 23:45</p></div><span class="status ok">正常</span></li><li><div><b>Google AI Blog</b><p>RSS 已验证，最近新增 2 篇</p></div><span class="status ok">正常</span></li></ul></div></aside></div>
+          <div class="grid" style="margin-top:16px"><section class="panel"><div class="panel-head"><h2>最近一次采集批次</h2><span class="status ok">完成</span></div><div class="panel-body"><div style="display:flex;justify-content:space-between;margin-bottom:8px"><span>16 个来源，110 条入库，38 条新增</span><span class="muted">23:50 - 23:54</span></div><div class="progress"><span style="width:94%"></span></div><p class="muted" style="font-size:12px;margin:10px 0 0">1 个来源采用降级结果；未突破任何来源的最小请求间隔。</p></div></section><section class="panel"><div class="panel-head"><h2>下一步</h2></div><div class="panel-body"><p style="margin-top:0">日报尚未生成。生成会刷新启用来源、更新缓存、从数据库筛选并创建 v1。</p><button class="btn primary" onclick="startDemo()"><i data-lucide="play" size="15"></i>开始生成</button></div></section></div>
+        </div></div>
+    </section>
+
+    <section id="variant-B" class="variant hidden"><div class="main command-layout"><div class="command-hero"><div><h1>日常工作台</h1><p>将日报生成作为可追踪任务运行。刷新、筛选、改写和渲染都在一个任务里留下记录。</p></div><button class="btn primary" onclick="startDemo()"><i data-lucide="plus" size="16"></i>新建日报任务</button></div>
+      <div class="task-strip"><div class="task-step"><b>1. 刷新来源</b><small>按来源限频写入缓存</small></div><div class="task-step active"><b>2. 生成日报</b><small>当前可发起 1 个任务</small></div><div class="task-step"><b>3. 审核版本</b><small>确认入选与排版</small></div><div class="task-step"><b>4. 上传草稿</b><small>指定冻结版本</small></div></div>
+      <div class="command-grid"><section class="panel"><div class="panel-head"><h2>任务队列</h2><button class="btn icon" title="筛选任务"><i data-lucide="list-filter" size="16"></i></button></div><div class="job-row"><span class="status running">运行中</span><div><div class="job-name">09/08 日报生成</div><small>来源刷新已完成，正在执行 LLM 筛选与改写</small></div><div><div class="progress"><span style="width:66%"></span></div><small>4 / 6 阶段</small></div><button class="btn" disabled>查看运行</button></div><div class="job-row"><span class="status waiting">排队中</span><div><div class="job-name">单来源采集: 华为开发者 RSS</div><small>等待其最小采集间隔结束</small></div><div class="muted">23:45 可运行</div><button class="btn" disabled>限频保护</button></div><div class="job-row"><span class="status ok">已完成</span><div><div class="job-name">09/07 日报 v2 上传草稿</div><small>草稿已保存至微信；未执行最终发布</small></div><div class="muted">23:18 完成</div><button class="btn">查看审计</button></div></section>
+        <aside class="panel"><div class="panel-head"><h2>当前任务</h2><span class="status running">运行中</span></div><div class="panel-body"><h3>09/08 日报生成</h3><p class="muted">任务 `rj_20260908_001`</p><ul class="timeline"><li class="ok"><time>09:02</time>创建任务，锁定日报时间窗</li><li class="ok"><time>09:02 - 09:06</time>刷新 16 个来源，15 成功，1 部分结果</li><li class="ok"><time>09:06</time>从缓存查询 110 条候选资讯</li><li><time>09:06 - 进行中</time>语义去重、筛选与结构化改写</li><li class="warn"><time>待执行</time>冻结 revision 1，生成预览 HTML</li></ul><button class="btn" onclick="toggleDrawer()"><i data-lucide="scroll-text" size="15"></i>查看结构化日志</button></div></aside></div>
+      <section class="panel" style="margin-top:16px"><div class="panel-head"><h2>来源状态</h2><span class="muted">不在此页面绕过限频</span></div><table><thead><tr><th>来源</th><th>上次结果</th><th>新增</th><th>下次允许采集</th><th>健康</th></tr></thead><tbody><tr><td>量子位</td><td>23:52 完成</td><td>8</td><td>23:42</td><td><span class="status ok">正常</span></td></tr><tr><td>华为开发者 RSS</td><td>23:54 部分结果</td><td>2</td><td>23:45</td><td><span class="status partial">待关注</span></td></tr><tr><td>Google AI Blog</td><td>23:51 完成</td><td>2</td><td>23:41</td><td><span class="status ok">正常</span></td></tr></tbody></table></section>
+    </div></section>
+
+    <section id="variant-C" class="variant hidden"><div class="main review-shell"><div class="review-head"><div><h1>AI 资讯日报 09/08 <span class="muted" style="font-size:14px;font-weight:500">revision 2</span></h1><div class="review-meta"><span>时间窗: 09/07 00:00 - 09/08 23:50</span><span>16 条入选</span><span>内容哈希: `a618...9d24`</span></div></div><div class="review-actions"><button class="btn"><i data-lucide="history" size="15"></i>版本历史</button><button class="btn primary" onclick="showUploadConfirm()"><i data-lucide="send" size="15"></i>上传草稿</button></div></div>
+      <div class="review-layout"><section class="panel review-table"><div class="panel-head"><div style="display:flex;gap:16px;align-items:center"><h2>入选资讯</h2><span class="muted">已冻结 16 条</span></div><div><button class="btn icon" title="调整顺序"><i data-lucide="arrow-down-up" size="15"></i></button><button class="btn" style="margin-left:6px"><i data-lucide="file-pen-line" size="15"></i>编辑版本</button></div></div><table><thead><tr><th style="width:38px"><input class="row-select" type="checkbox" checked></th><th>标题与摘要</th><th style="width:100px">来源</th><th style="width:82px">状态</th><th style="width:45px"></th></tr></thead><tbody><tr><td><input class="row-select" type="checkbox" checked></td><td class="title-cell"><b>端侧模型推理加速进入新阶段，手机厂商开始重构 AI 体验</b><small>多家厂商围绕端云协同、内存压缩和多模态交互公布新进展。</small></td><td>量子位</td><td><span class="status ok">可发布</span></td><td><button class="btn icon" title="编辑条目"><i data-lucide="pencil" size="14"></i></button></td></tr><tr><td><input class="row-select" type="checkbox" checked></td><td class="title-cell"><b>华为发布开发者生态更新，覆盖 HarmonyOS 与 AI 能力</b><small>重点包括开发工具、插件生态和模型能力的应用侧接入。</small></td><td>华为开发者</td><td><span class="status ok">可发布</span></td><td><button class="btn icon" title="编辑条目"><i data-lucide="pencil" size="14"></i></button></td></tr><tr><td><input class="row-select" type="checkbox" checked></td><td class="title-cell"><b>OpenAI 发布新的模型评测和开发者文档</b><small>围绕可控性、安全性和生产环境部署提出新的建议。</small></td><td>OpenAI</td><td><span class="status ok">可发布</span></td><td><button class="btn icon" title="编辑条目"><i data-lucide="pencil" size="14"></i></button></td></tr><tr><td><input class="row-select" type="checkbox"></td><td class="title-cell"><b>待复核: 生成式 AI 企业应用融资动态</b><small>主题匹配但信息密度不足，未自动纳入。</small></td><td>InfoQ</td><td><span class="status partial">待复核</span></td><td><button class="btn icon" title="纳入版本"><i data-lucide="plus" size="14"></i></button></td></tr></tbody></table><div class="panel-body" style="border-top:1px solid var(--line);display:flex;justify-content:space-between"><span class="muted">第 1 页，共 16 条</span><span><button class="btn icon" title="上一页" disabled><i data-lucide="chevron-left" size="15"></i></button><button class="btn icon" title="下一页"><i data-lucide="chevron-right" size="15"></i></button></span></div></section>
+        <section class="panel"><div class="panel-head"><h2>排版预览</h2><div><button class="btn icon" title="新窗口打开"><i data-lucide="external-link" size="15"></i></button><button class="btn icon" title="重新渲染"><i data-lucide="refresh-cw" size="15"></i></button></div></div><div class="preview"><article class="mobile-paper"><h2>AI 资讯日报 | 09 月 08 日</h2><div class="date">聚焦 AI、端侧模型、移动技术与生态</div><div class="paper-item"><b>端侧模型推理加速进入新阶段，手机厂商开始重构 AI 体验</b><p>多家厂商围绕端云协同、内存压缩和多模态交互公布新进展。</p></div><div class="paper-item"><b>华为发布开发者生态更新，覆盖 HarmonyOS 与 AI 能力</b><p>重点包括开发工具、插件生态和模型能力的应用侧接入。</p></div><div class="paper-item"><b>OpenAI 发布新的模型评测和开发者文档</b><p>围绕可控性、安全性和生产环境部署提出新的建议。</p></div></article></div></section>
+      </div></div></section>
+  </main>
+
+  <aside id="drawer" class="drawer hidden"><div class="panel-head"><h3>最近操作事件</h3><button class="drawer-close" aria-label="关闭日志" onclick="toggleDrawer()">×</button></div><div class="panel-body"><div class="event"><strong>来源采集完成</strong><span>09:06 · `collect_batch_338` · 15 completed / 1 partial</span></div><div class="event"><strong>字段补全降级</strong><span>09:05 · huawei-rss · `digest_missing`</span></div><div class="event"><strong>日报任务创建</strong><span>09:02 · `rj_20260908_001` · manual</span></div><div class="event"><strong>上次草稿上传成功</strong><span>昨日 23:18 · revision 2 · `media_id` 已脱敏</span></div></div></aside>
+  <dialog id="uploadDialog" style="border:1px solid #cbd5e1;border-radius:8px;padding:0;width:min(440px,calc(100% - 32px));box-shadow:0 20px 50px rgba(16,24,40,.28)"><div class="panel-head"><h2>确认上传草稿</h2><button class="drawer-close" onclick="document.getElementById('uploadDialog').close()">×</button></div><div class="panel-body"><p style="margin-top:0">将上传指定的冻结版本，不会重新采集、筛选、调用 LLM 或改变预览内容。</p><table><tbody><tr><th>日报</th><td>AI 资讯日报 09/08</td></tr><tr><th>版本</th><td>revision 2</td></tr><tr><th>条目</th><td>16 条</td></tr><tr><th>内容哈希</th><td>`a618...9d24`</td></tr></tbody></table><label style="display:flex;gap:8px;align-items:flex-start;margin:17px 0"><input id="confirmCheck" type="checkbox" onchange="document.getElementById('confirmUpload').disabled=!this.checked"><span>我确认仅创建公众号草稿，最终发布仍在公众号后台人工完成。</span></label><div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn" onclick="document.getElementById('uploadDialog').close()">取消</button><button id="confirmUpload" class="btn primary" disabled onclick="uploadDemo()"><i data-lucide="send" size="15"></i>确认上传</button></div></div></dialog>
+  <div class="prototype-bar"><button title="上一种原型" onclick="cycle(-1)"><i data-lucide="chevron-left" size="16"></i></button><span id="variantLabel">A - 状态总览</span><button title="下一种原型" onclick="cycle(1)"><i data-lucide="chevron-right" size="16"></i></button><span class="proto-note">PROTOTYPE ONLY</span></div>
+  <script>
+    const variants = [{ id: 'A', label: 'A - 状态总览' }, { id: 'B', label: 'B - 任务指挥台' }, { id: 'C', label: 'C - 审核优先' }];
+    let current = new URLSearchParams(location.search).get('variant') || 'A';
+    if (!variants.some(item => item.id === current)) current = 'A';
+    function renderVariant() { variants.forEach(item => document.getElementById(`variant-${item.id}`).classList.toggle('hidden', item.id !== current)); document.getElementById('variantLabel').textContent = variants.find(item => item.id === current).label; const url = new URL(location); url.searchParams.set('variant', current); history.replaceState({}, '', url); lucide.createIcons(); }
+    function cycle(direction) { const index = variants.findIndex(item => item.id === current); current = variants[(index + direction + variants.length) % variants.length].id; renderVariant(); }
+    function toggleDrawer() { document.getElementById('drawer').classList.toggle('hidden'); }
+    function startDemo() { const toast = document.getElementById('toast'); toast.textContent = '已创建演示任务。真实实现会先写入持久化任务队列。'; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 3600); }
+    function showUploadConfirm() { document.getElementById('uploadDialog').showModal(); }
+    function uploadDemo() { document.getElementById('uploadDialog').close(); const toast = document.getElementById('toast'); toast.textContent = '演示: 已提交 revision 2 的草稿上传任务。'; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 3600); }
+    window.addEventListener('keydown', event => { const tag = document.activeElement.tagName; if (['INPUT','TEXTAREA','SELECT'].includes(tag) || document.activeElement.isContentEditable) return; if (event.key === 'ArrowLeft') cycle(-1); if (event.key === 'ArrowRight') cycle(1); });
+    renderVariant();
+  </script>
+</body>
+</html>

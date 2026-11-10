@@ -1,0 +1,62 @@
+[storage]
+database = "data/collector.db"
+
+[collection]
+# Upstream requests five publish records per page. Each record may contain multiple articles.
+pages_per_feed = 3
+page_size = 5
+
+[rate_limit]
+# This is a hard lower bound, shared by search and article-list requests.
+minimum_interval_seconds = 240
+# A 200013 response stops the remaining batch and opens a global cooldown.
+cooldown_seconds = 21600
+request_timeout_seconds = 30
+
+[logging]
+# Logs go to stderr and this rotating file. Credentials and request parameters are never logged.
+file = "data/collector.log"
+level = "INFO"
+max_bytes = 1048576
+backup_count = 5
+
+[public_sources]
+# Only configured list endpoints are requested by default.
+catalog = "public-sources.toml"
+request_timeout_seconds = 20
+user_agent = "PublicNewsCollector/1.0 (+local-pipeline)"
+# Uses the locally installed Chrome only for endpoints that genuinely render a
+# public listing client-side. It does not navigate to article URLs.
+browser = "chrome"
+# `interactive` opens a visible Chrome with its own collector profile. It is for
+# manual source validation and never copies cookies from your everyday Chrome.
+browser_mode = "headless"
+browser_profile = "data/public-browser-profile"
+stale_run_seconds = 1800
+
+[detail_enrichment]
+# Off by default. When enabled, the collector opens at most two explicitly
+# allowlisted public detail pages per endpoint, and only when a list item has
+# title, URL and time but no digest. Raw page text is never persisted.
+enabled = false
+max_items_per_endpoint = 2
+timeout_seconds = 30
+base_directory = "data/crawl4ai"
+
+[health]
+summary_directory = "data/health"
+webhook_url = ""
+stale_after_hours = 48
+baseline_runs = 3
+
+[auth]
+# A real WeChat login QR code remains valid for at most this many seconds.
+login_timeout_seconds = 300
+# Use the installed Google Chrome on developer machines. Set to "chromium" for
+# a server where Playwright's managed Chromium has been installed separately.
+browser = "chrome"
+# "desktop" opens the official WeChat login page in a dedicated visible Chrome
+# window on the deployment machine. "web_qr" is the legacy screenshot relay.
+delivery_mode = "desktop"
+# Account searches are paced independently and do not delay article collection.
+search_minimum_interval_seconds = 15

@@ -1,0 +1,15 @@
+.venv/
+data/
+collector.toml
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Local-only artifacts
+.codegraph/
+.playwright-cli/
+*.json.enc
+weread_accounts.enc
+credentials.enc
+.pytest_cache/
+admin-accounts.png

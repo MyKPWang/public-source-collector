@@ -1,0 +1,14 @@
+[Unit]
+Description=WeChat List Collector Local Admin
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/wechat-list-collector
+EnvironmentFile=/etc/wechat-list-collector.env
+ExecStart=/opt/wechat-list-collector/.venv/bin/wechat-list-collector --config /etc/wechat-list-collector.toml admin --host 127.0.0.1 --port 4101
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,3 @@
+[console_scripts]
+public-source-collector = wechat_list_collector.cli:main
+wechat-list-collector = wechat_list_collector.cli:main
