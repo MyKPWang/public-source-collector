@@ -3,8 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import replace
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import Engine, func, select, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -31,6 +32,12 @@ from .schema import (
 
 class RepositoryError(ValueError):
     """A requested state transition cannot be represented by the persisted model."""
+
+
+# 跨通道去重时允许的发布时间差（小时）。微信读书时间是整分、补采时间是秒级，
+# 同一篇文章两条记录的正常差 < 1 分钟；留足余量是为了跨零点的情况。
+# 超过这个窗口的同名文章视为**不同文章**（同号公众号会在不同日子发同名文章）。
+_RECOVERY_DEDUP_SPAN_HOURS = 6.0
 
 
 class CollectionRepository:
@@ -802,6 +809,189 @@ class CollectionRepository:
                 )
             )
         return PageStoreResult(len(page), new_count, updated_count, observed_count)
+
+    def store_recovered_articles(
+        self,
+        *,
+        account_id: str,
+        articles_to_store: Iterable[ArticleInput],
+    ) -> tuple[int, int]:
+        """幂等写入补采到的文章，返回 ``(新增数, 更新数)``。
+
+        与 :meth:`store_page` 的区别：补采不隶属于某次采集运行，因此不写
+        ``collection_run_articles``，也不需要 run/account 关联。
+
+        幂等性来自 ``uq_articles_account_source (account_id, source_article_id)``
+        唯一约束：同一篇文章重复补采只会更新既有记录，不会新建重复行。
+
+        此外还做一次**跨通道去重**：微信读书通道用的 ``source_article_id`` 是
+        ``MP_WXS_{uin}_{reviewId}``，而补采用的是 ``MP_{biz}_{mid}_{idx}``，
+        两套 ID 对同一篇文章取值不同，唯一约束拦不住，会写出重复行。
+        因此写入前在同一账号内查重：标题规范化相同 **且发布时间相差不超过
+        ``_RECOVERY_DEDUP_SPAN_HOURS`` 小时**、且两行 ``source_article_id``
+        前缀不同（一行微信读书行、一行补采行）时，才判定为同一篇并合并，
+        只补充它缺失的字段（正文链接、封面、摘要），不新建行。
+
+        标题相同但发布时间相隔多天的**不算重复** —— 同一个公众号会在不同
+        日子发同名文章（实测量子位「量子位编辑作者招聘」10 天发了 10 条），
+        按标题无差别去重会误删历史文章。
+        """
+        page = list(articles_to_store)
+        now = self._timestamp()
+        new_count = 0
+        updated_count = 0
+
+        with self.engine.begin() as connection:
+            for article in page:
+                existing = connection.execute(
+                    select(articles).where(
+                        articles.c.account_id == account_id,
+                        articles.c.source_article_id == article.source_article_id,
+                    )
+                ).mappings().one_or_none()
+                if existing is None:
+                    # 跨通道去重：标题相同 + 时间接近 + ID 前缀不同 = 同一篇。
+                    existing = self._find_recovered_duplicate(
+                        connection, account_id, article
+                    )
+                    if existing is not None:
+                        # 合并：保留 WeRead 行的 source_article_id，只补空缺字段。
+                        merged = self._merge_recovered_values(
+                            existing, article, now
+                        )
+                        connection.execute(
+                            update(articles)
+                            .where(articles.c.id == str(existing["id"]))
+                            .values(
+                                **merged,
+                                last_seen_at=now,
+                                updated_at=now,
+                            )
+                        )
+                        updated_count += 1
+                        continue
+                values = self._article_values(article, now)
+                if existing is None:
+                    connection.execute(
+                        articles.insert().values(id=new_uuid7(), account_id=account_id, **values)
+                    )
+                    new_count += 1
+                    continue
+                # 摘要单调更新：补采的摘要可能为空，不能覆盖已有的非空摘要。
+                stored_digest = str(existing["digest"] or "")
+                if stored_digest.strip() and not article.digest.strip():
+                    values["digest"] = stored_digest
+                    values["content_hash"] = self._content_hash(article, str(values["published_at"]))
+                updated_values = {
+                    key: value
+                    for key, value in values.items()
+                    if key not in {"first_seen_at", "last_seen_at", "created_at", "updated_at"}
+                }
+                connection.execute(
+                    update(articles)
+                    .where(articles.c.id == str(existing["id"]))
+                    .values(**updated_values, last_seen_at=now, updated_at=now)
+                )
+                updated_count += 1
+        return new_count, updated_count
+
+    def _find_recovered_duplicate(
+        self,
+        connection: Any,
+        account_id: str,
+        article: ArticleInput,
+    ) -> Mapping[str, Any] | None:
+        """找出与 ``article`` 同一篇的既有记录（跨通道），没有则返回 ``None``。
+
+        判定条件（三条同时满足才算同一篇）：
+
+        1. 同一账号；
+        2. 标题规范化后相同；
+        3. 发布时间相差不超过 ``_RECOVERY_DEDUP_SPAN_HOURS`` 小时。
+
+        另外要求 ID 前缀不同 —— 微信读书行 ``MP_WXS_*`` 与补采行 ``MP_{biz}_*``
+        才是需要合并的两套 ID；同前缀的行已被唯一约束处理过。
+
+        第 3 条是必要的：同一个公众号会在不同日子发同名文章
+        （实测量子位「量子位编辑作者招聘」10 天发了 10 条），
+        只按标题去重会把历史文章误合并成一条。
+        """
+        if article.published_at is None:
+            return None
+        candidates = connection.execute(
+            select(articles).where(
+                articles.c.account_id == account_id,
+                func.lower(articles.c.title) == func.lower(article.title),
+            )
+        ).mappings().all()
+
+        incoming = self._timestamp(article.published_at)
+        best: tuple[float, Mapping[str, Any]] | None = None
+        for row in candidates:
+            stored_sid = str(row["source_article_id"] or "")
+            if stored_sid == article.source_article_id:
+                continue
+            same_family = stored_sid.startswith("MP_WXS_") == (
+                article.source_article_id.startswith("MP_WXS_")
+            )
+            if same_family:
+                continue
+            try:
+                stored = self._parse_timestamp(str(row["published_at"]))
+            except Exception:  # noqa: BLE001 - 脏数据跳过即可
+                continue
+            span_h = abs((stored - self._parse_timestamp(incoming)).total_seconds()) / 3600.0
+            if span_h > _RECOVERY_DEDUP_SPAN_HOURS:
+                continue
+            if best is None or span_h < best[0]:
+                best = (span_h, row)
+        return best[1] if best else None
+
+    def _merge_recovered_values(
+        self,
+        existing: Mapping[str, Any],
+        article: ArticleInput,
+        now: str,
+    ) -> dict[str, Any]:
+        """把补采结果合并进一条已存在的记录。
+
+        原则：**只补空缺，不覆盖**。微信读书行的 ``published_at`` 精度更高
+        （带秒），补采行的链接更完整（带 ``chksm``），各有优势，所以：
+        链接/封面/摘要取"更完整的一方"，发布时间保持原值。
+        """
+        merged: dict[str, Any] = {}
+
+        existing_url = str(existing.get("url") or "")
+        existing_cover = str(existing.get("cover_url") or "")
+        existing_digest = str(existing.get("digest") or "")
+
+        # 链接：优先带 chksm 的完整短链
+        new_url = article.url or ""
+        if "chksm=" in new_url and "chksm=" not in existing_url:
+            merged["url"] = new_url
+        elif not existing_url:
+            merged["url"] = new_url
+
+        if not existing_cover and article.cover_url:
+            merged["cover_url"] = article.cover_url
+
+        if not existing_digest.strip() and article.digest.strip():
+            merged["digest"] = article.digest
+
+        if merged:
+            # content_hash 基于**合并后**的实际值重算，保证哈希与行内容一致。
+            merged_article = replace(
+                article,
+                title=str(existing.get("title") or article.title),
+                digest=str(merged.get("digest", existing_digest)),
+                url=str(merged.get("url", existing_url)),
+                cover_url=str(merged.get("cover_url", existing_cover)),
+                published_at=self._parse_timestamp(str(existing["published_at"])),
+            )
+            merged["content_hash"] = self._content_hash(
+                merged_article, str(existing["published_at"])
+            )
+        return merged
 
     def store_job_page(
         self,
