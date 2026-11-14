@@ -1,0 +1,261 @@
+#!/usr/bin/env python3
+"""从第三方转载/索引站（当前是 aipick.news）回收原始微信永久链接并补采入库。
+
+背景
+----
+微信读书索引会漏掉部分公众号文章（独立覆盖 5/7）。`recover_missing_articles.py`
+可以从库里的永久链接做广度优先扩展，但它**没有新种子**——扩展到某一层就停了。
+
+aipick.news 是一个带原文永久链接的 AI 文章转载/索引站：
+
+* ``/items/<slug>`` 页面里有原始 ``mp.weixin.qq.com/s?__biz=…&mid=…&idx=…&sn=…``；
+* ``/all?q=<关键词>`` 和 ``/daily/<YYYY-MM-DD>`` 都能列举条目。
+
+本脚本把这些外部发现的永久链接当作**外部种子**喂给现有的
+``PermalinkRecoveryRunner``，走正式的 repository 写库路径（幂等），从而：
+
+* 把原文标题/摘要/封面/发布时间抓回来（比转载站元数据准）；
+* 把原始永久链接写进 ``articles.url``，后续就能作为 BFS 种子继续扩展。
+
+用法::
+
+    python scripts/recover_from_external_seeds.py --seeds seeds.json --apply
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import re
+import sys
+import time
+import urllib.parse
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
+
+LOGGER = logging.getLogger("recover_external")
+
+PERMALINK_RE = re.compile(
+    r"https?://mp\.weixin\.qq\.com/s\?__biz=([^&\"'<>\\\s]+)&amp;?mid=(\d+)&amp;?idx=(\d+)&amp;?sn=([a-f0-9]+)",
+    re.I,
+)
+PERMALINK_RE_AMP = re.compile(
+    r"https?://mp\.weixin\.qq\.com/s\?__biz=([^&\"'<>\\\s]+)&mid=(\d+)&idx=(\d+)&sn=([a-f0-9]+)",
+    re.I,
+)
+
+
+def parse_permalinks(text: str) -> list[dict[str, str]]:
+    """从任意文本（HTML / JSON / 日志）里抽永久链接坐标。"""
+    found: dict[str, dict[str, str]] = {}
+    for pattern in (PERMALINK_RE_AMP, PERMALINK_RE):
+        for match in pattern.finditer(text or ""):
+            biz = urllib.parse.unquote(match.group(1))
+            mid, idx, sn = match.group(2), match.group(3), match.group(4)
+            key = f"{biz}|{mid}|{idx}|{sn}"
+            found.setdefault(key, {"biz": biz, "mid": mid, "idx": idx, "sn": sn})
+    return list(found.values())
+
+
+def _coords_from_mapping(item: dict) -> dict[str, str] | None:
+    """接受 ``{"biz":…, "mid":…, "idx":…, "sn":…}`` 这种结构化种子。"""
+    biz = str(item.get("biz") or item.get("__biz") or "").strip()
+    mid = str(item.get("mid") or "").strip()
+    sn = str(item.get("sn") or "").strip()
+    idx = str(item.get("idx") or "1").strip()
+    if biz and mid and sn:
+        return {"biz": urllib.parse.unquote(biz), "mid": mid, "idx": idx, "sn": sn}
+    return None
+
+
+def load_seeds(path: Path) -> list[dict[str, str]]:
+    raw = path.read_text(encoding="utf-8")
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return parse_permalinks(raw)
+    seeds: list[dict[str, str]] = []
+
+    def walk(node: object) -> None:
+        if isinstance(node, str):
+            seeds.extend(parse_permalinks(node))
+        elif isinstance(node, dict):
+            direct = _coords_from_mapping(node)
+            if direct:
+                seeds.append(direct)
+            else:
+                for value in node.values():
+                    walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(payload)
+    unique: dict[str, dict[str, str]] = {}
+    for seed in seeds:
+        unique[f"{seed['biz']}|{seed['mid']}|{seed['idx']}|{seed['sn']}"] = seed
+    return list(unique.values())
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="用外部发现的永久链接补采公众号文章")
+    parser.add_argument("--config", type=Path, default=REPO_ROOT / "collector.toml")
+    parser.add_argument("--database", type=Path, default=None)
+    parser.add_argument("--credentials", type=Path, default=None)
+    parser.add_argument("--seeds", type=Path, required=True, help="永久链接 JSON / 纯文本")
+    parser.add_argument("--account-id", default=None, help="写回哪个账号（默认按 biz 自动匹配）")
+    parser.add_argument("--max-articles", type=int, default=80)
+    parser.add_argument("--max-depth", type=int, default=1, help="从外部种子继续扩展的层数")
+    parser.add_argument("--apply", action="store_true", help="真正写库；缺省只做演练")
+    parser.add_argument(
+        "--cache",
+        type=Path,
+        default=None,
+        help="抓取结果缓存 JSON；存在则直接复用，不重复请求微信",
+    )
+    args = parser.parse_args(argv)
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+    from wechat_list_collector.config import load_settings
+    from wechat_list_collector.infrastructure.db import (
+        CollectionRepository,
+        create_sqlite_engine,
+    )
+    from wechat_list_collector.infrastructure.credential_vault import (
+        EncryptedFileCredentialVault,
+    )
+    from wechat_list_collector.infrastructure.wechat.permalink_recovery import (
+        PermalinkCoords,
+        PermalinkRecoveryClient,
+        PermalinkRecoveryRunner,
+        PermalinkTokenStore,
+        RecoveredArticle,
+        RecoveryReport,
+        to_article_inputs,
+    )
+
+    settings = load_settings(args.config)
+    database = args.database or Path(settings.database)
+    credentials = args.credentials or (database.parent / "credentials.enc")
+
+    seeds = load_seeds(args.seeds)
+    if not seeds:
+        LOGGER.error("没有从 %s 解析出永久链接", args.seeds)
+        return 2
+    LOGGER.info("外部种子 %d 条", len(seeds))
+
+    vault = EncryptedFileCredentialVault(credentials)
+    tokens = PermalinkTokenStore(vault)
+    client = PermalinkRecoveryClient(tokens)
+    runner = PermalinkRecoveryRunner(
+        client, max_articles=args.max_articles, max_depth=args.max_depth
+    )
+
+    cached = None
+    if args.cache and args.cache.exists():
+        payload = json.loads(args.cache.read_text(encoding="utf-8"))
+        cached = [RecoveredArticle(**item) for item in payload]
+        LOGGER.info("复用缓存 %d 篇（%s）", len(cached), args.cache)
+        report = RecoveryReport()
+        report.new_articles = cached
+        report.fetched = len(cached)
+        report.seeds = len(cached)
+    else:
+        coords = [
+            PermalinkCoords(biz=s["biz"], mid=s["mid"], idx=s["idx"], sn=s["sn"]) for s in seeds
+        ]
+        report = runner.run([], permalink_seeds=coords)
+        if args.cache:
+            args.cache.parent.mkdir(parents=True, exist_ok=True)
+            args.cache.write_text(
+                json.dumps(
+                    [
+                        {
+                            "title": a.title,
+                            "url": a.url,
+                            "digest": a.digest,
+                            "cover_url": a.cover_url,
+                            "published_at": a.published_at,
+                            "biz": a.biz,
+                            "mid": a.mid,
+                            "idx": a.idx,
+                            "source": a.source,
+                        }
+                        for a in report.new_articles
+                    ],
+                    ensure_ascii=False,
+                    indent=1,
+                ),
+                encoding="utf-8",
+            )
+            LOGGER.info("抓取结果已缓存 → %s", args.cache)
+
+    LOGGER.info(
+        "抓取 %d，失败 %d，得到文章 %d", report.fetched, report.failed, len(report.new_articles)
+    )
+    for article in report.new_articles:
+        LOGGER.info("  %s | %s", article.published_at[:16], article.title[:60])
+
+    if not args.apply:
+        LOGGER.info("演练模式，未写库")
+        return 0
+
+    engine = create_sqlite_engine(database)
+    repository = CollectionRepository(engine)
+
+    # 按 biz 找到对应账号，把文章写回该账号；找不到就退回指定/第一个账号。
+    import sqlite3
+
+    connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
+    try:
+        rows = connection.execute(
+            "SELECT id, name FROM official_accounts"
+        ).fetchall()
+        # articles.source_article_id 形如 MP_<biz>_<mid>_<idx>，据此建立 biz → account 映射
+        biz_rows = connection.execute(
+            "SELECT account_id, source_article_id FROM articles"
+            " WHERE source_article_id LIKE 'MP_%'"
+        ).fetchall()
+    finally:
+        connection.close()
+    by_biz: dict[str, str] = {}
+    for account_id, source_article_id in biz_rows:
+        parts = str(source_article_id).split("_")
+        if len(parts) >= 2 and parts[1]:
+            by_biz.setdefault(parts[1], account_id)
+    LOGGER.info(
+        "已知 biz→账号 映射 %d 个，例如 %s", len(by_biz), list(by_biz.items())[:3]
+    )
+
+    buckets: dict[str, list] = {}
+    unmapped: list[str] = []
+    for article in report.new_articles:
+        target = args.account_id or by_biz.get(article.biz or "")
+        if not target:
+            unmapped.append(article.biz or "?")
+            continue
+        buckets.setdefault(target, []).append(article)
+    if unmapped:
+        LOGGER.warning("有 %d 篇文章找不到对应账号，跳过：%s", len(unmapped), sorted(set(unmapped)))
+
+    total_new = total_updated = 0
+    for account_id, articles in buckets.items():
+        new_count, updated_count = repository.store_recovered_articles(
+            account_id=account_id,
+            articles_to_store=list(to_article_inputs(articles, account_id=account_id)),
+        )
+        total_new += new_count
+        total_updated += updated_count
+        LOGGER.info("[%s] 新增 %d，更新 %d", account_id, new_count, updated_count)
+
+    LOGGER.info("合计：新增 %d，更新 %d", total_new, total_updated)
+    time.sleep(0)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
