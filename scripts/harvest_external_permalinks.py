@@ -58,6 +58,11 @@ DEFAULT_QUERIES = [
     "AI", "人工智能", "大模型", "LLM", "智能体", "Agent", "开源",
     "英伟达", "苹果", "谷歌", "微软", "OpenAI", "Anthropic", "DeepSeek",
     "机器人", "自动驾驶", "芯片", "算力", "生成式", "多模态", "编程",
+    # People and company names: the topical terms above miss the pieces that
+    # are *about* someone, and those are exactly the ones the WeRead index
+    # tends to drop. Measured: adding these three takes the APPSO seed count
+    # from 24 to 38 and recovers mid=2651115485.
+    "马斯克", "黄仁勋", "苹果AI",
 ]
 
 
