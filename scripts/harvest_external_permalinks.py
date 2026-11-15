@@ -44,11 +44,14 @@ DEFAULT_UA = (
 )
 
 # 允许 & / &amp; / \\u0026 三种分隔符写法（aipick 的内联 JSON 会把 & 编码成 \\u0026）
+# chksm 是可选的抓取凭证：aipick 的链接自带 chksm，保留下来就能抓到
+# 「不在本地账号池里」的公众号（token store 没有它们的 chksm）。
 PERMALINK_RE = re.compile(
     r"mp\.weixin\.qq\.com/s\?__biz=([^&\"'<>\\\s]+)"
     r"&(?:amp;|\\u0026|&#38;|%26)?mid=(\d+)"
     r"&(?:amp;|\\u0026|&#38;|%26)?idx=(\d+)"
-    r"&(?:amp;|\\u0026|&#38;|%26)?sn=([a-f0-9]+)",
+    r"&(?:amp;|\\u0026|&#38;|%26)?sn=([a-f0-9]+)"
+    r"(?:&(?:amp;|\\u0026|&#38;|%26)?chksm=([a-f0-9]+))?",
     re.I,
 )
 ITEM_LINK = re.compile(r'href="(/items/[a-z0-9]+)"')
@@ -84,15 +87,16 @@ def extract_permalinks(text: str) -> list[dict[str, str]]:
     for match in PERMALINK_RE.finditer(text or ""):
         biz = urllib.parse.unquote(match.group(1))
         key = f"{biz}|{match.group(2)}|{match.group(3)}|{match.group(4)}"
-        found.setdefault(
-            key,
-            {
-                "biz": biz,
-                "mid": match.group(2),
-                "idx": match.group(3),
-                "sn": match.group(4),
-            },
-        )
+        seed = {
+            "biz": biz,
+            "mid": match.group(2),
+            "idx": match.group(3),
+            "sn": match.group(4),
+        }
+        chksm = match.group(5)
+        if chksm:
+            seed["chksm"] = chksm
+        found.setdefault(key, seed)
     return list(found.values())
 
 

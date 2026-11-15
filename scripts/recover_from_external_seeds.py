@@ -60,14 +60,33 @@ def parse_permalinks(text: str) -> list[dict[str, str]]:
     return list(found.values())
 
 
+def _normalize_name(name: str) -> str:
+    """公众号显示名归一化，用于跨通道对齐账号。
+
+    微信页面上的名字常带空格和全角差异，微信读书侧则可能多出后缀。
+    去掉空白并转小写，便于两边对上。
+    """
+    text = (name or "").strip()
+    text = re.sub(r"[\s　]+", "", text)
+    return text.lower()
+
+
 def _coords_from_mapping(item: dict) -> dict[str, str] | None:
-    """接受 ``{"biz":…, "mid":…, "idx":…, "sn":…}`` 这种结构化种子。"""
+    """接受 ``{"biz":…, "mid":…, "idx":…, "sn":…}`` 这种结构化种子。
+
+    ``chksm`` 可选：外部索引站给的链接常常自带它，有了它就能抓到
+    不在本地账号池里的公众号。
+    """
     biz = str(item.get("biz") or item.get("__biz") or "").strip()
     mid = str(item.get("mid") or "").strip()
     sn = str(item.get("sn") or "").strip()
     idx = str(item.get("idx") or "1").strip()
     if biz and mid and sn:
-        return {"biz": urllib.parse.unquote(biz), "mid": mid, "idx": idx, "sn": sn}
+        coords = {"biz": urllib.parse.unquote(biz), "mid": mid, "idx": idx, "sn": sn}
+        chksm = str(item.get("chksm") or "").strip()
+        if chksm:
+            coords["chksm"] = chksm
+        return coords
     return None
 
 
@@ -166,7 +185,14 @@ def main(argv: list[str] | None = None) -> int:
         report.seeds = len(cached)
     else:
         coords = [
-            PermalinkCoords(biz=s["biz"], mid=s["mid"], idx=s["idx"], sn=s["sn"]) for s in seeds
+            PermalinkCoords(
+                biz=s["biz"],
+                mid=s["mid"],
+                idx=s["idx"],
+                sn=s["sn"],
+                chksm=s.get("chksm", ""),
+            )
+            for s in seeds
         ]
         report = runner.run([], permalink_seeds=coords)
         if args.cache:
@@ -184,6 +210,7 @@ def main(argv: list[str] | None = None) -> int:
                             "mid": a.mid,
                             "idx": a.idx,
                             "source": a.source,
+                            "account_name": a.account_name,
                         }
                         for a in report.new_articles
                     ],
@@ -207,7 +234,16 @@ def main(argv: list[str] | None = None) -> int:
     engine = create_sqlite_engine(database)
     repository = CollectionRepository(engine)
 
-    # 按 biz 找到对应账号，把文章写回该账号；找不到就退回指定/第一个账号。
+    # 把恢复出来的文章放回**正确的账号**。
+    #
+    # 这里有两套互不相通的标识空间：
+    # * ``official_accounts.source_account_id`` 是**公众号后台 fakeid**
+    #   （QbitAI / AI_era / appsolution …），只对走过后台会话的账号有意义；
+    # * 微信文章页里的 ``__biz``（MzI3MTA0MTk1MA== 之类）是另一套编号。
+    #
+    # 所以按 biz 反查 official_accounts 是查不到的。真正两边共有的只有
+    # **公众号显示名**：页面上的 ``id="js_name"``。于是匹配顺序是
+    # ①已有恢复记录的 biz → ②按显示名 → ③都没有就按显示名新建账号。
     import sqlite3
 
     connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
@@ -227,17 +263,44 @@ def main(argv: list[str] | None = None) -> int:
         parts = str(source_article_id).split("_")
         if len(parts) >= 2 and parts[1]:
             by_biz.setdefault(parts[1], account_id)
+    by_name: dict[str, str] = {}
+    for account_id, name in rows:
+        key = _normalize_name(name)
+        if key:
+            by_name.setdefault(key, account_id)
     LOGGER.info(
-        "已知 biz→账号 映射 %d 个，例如 %s", len(by_biz), list(by_biz.items())[:3]
+        "已知 biz→账号 映射 %d 个，名称→账号 映射 %d 个", len(by_biz), len(by_name)
     )
 
     buckets: dict[str, list] = {}
     unmapped: list[str] = []
+    created: dict[str, str] = {}
     for article in report.new_articles:
-        target = args.account_id or by_biz.get(article.biz or "")
+        target = (
+            args.account_id
+            or by_biz.get(article.biz or "")
+            or by_name.get(_normalize_name(article.account_name))
+        )
         if not target:
-            unmapped.append(article.biz or "?")
-            continue
+            # 账号池里没有这个公众号：按显示名新建一个，让文章有地方落。
+            name = (article.account_name or "").strip()
+            biz = (article.biz or "").strip()
+            if not name or not biz:
+                unmapped.append(biz or "?")
+                continue
+            if biz in created:
+                target = created[biz]
+            else:
+                target = repository.add_account(
+                    source_account_id=biz,
+                    fakeid_ciphertext=b"",
+                    name=name,
+                    enabled=True,
+                    display_order=len(created) + 100,
+                )
+                created[biz] = target
+                by_name.setdefault(_normalize_name(name), target)
+                LOGGER.info("新建账号 %s（biz=%s）→ %s", name, biz, target)
         buckets.setdefault(target, []).append(article)
     if unmapped:
         LOGGER.warning("有 %d 篇文章找不到对应账号，跳过：%s", len(unmapped), sorted(set(unmapped)))

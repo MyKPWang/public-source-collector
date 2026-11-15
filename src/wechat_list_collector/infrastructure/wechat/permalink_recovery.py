@@ -58,6 +58,10 @@ _PERMALINK_RE = re.compile(
     r"https?://mp\.weixin\.qq\.com/s\?__biz=([A-Za-z0-9%=_]+)([^\s\"'<>]*)"
 )
 _CANONICAL_RE = re.compile(r"msg_link\s*=\s*['\"]([^'\"]+)")
+# 公众号显示名。``id="js_name"`` 是页面顶部的账号名，最稳；``var nickname``
+# 在部分页面是空值，所以两者都试。
+_ACCOUNT_NAME_RE = re.compile(r'id=["\']js_name["\'][^>]*>\s*([^<]+)')
+_NICKNAME_RE = re.compile(r'var\s+nickname\s*=\s*["\']([^"\']+)["\']')
 _CREATE_TIME_RE = re.compile(r"create_time:\s*'([^']+)'")
 _OG_TITLE_RE = re.compile(r'<meta\s+property="og:title"\s+content="([^"]*)"')
 _OG_DESC_RE = re.compile(r'<meta\s+property="og:description"\s+content="([^"]*)"')
@@ -154,14 +158,37 @@ def _unescape(text: str) -> str:
     )
 
 
+def _parse_account_name(body: str) -> str:
+    """从文章页里取公众号显示名。
+
+    有了名字就能按名字映射回 ``official_accounts``：同一个公众号在微信读书
+    采集和永久链接恢复两条通道里用的是**不同的标识**（前者是 ``WXS…`` 这类
+    阅读记录 ID，后者是 ``MP_<biz>_…``），只有显示名是两边共有的。
+    """
+    for pattern in (_ACCOUNT_NAME_RE, _NICKNAME_RE):
+        match = pattern.search(body)
+        if not match:
+            continue
+        name = _decode_js_escapes(html.unescape(match.group(1)).strip())
+        if name and name not in {"微信公众平台"}:
+            return name
+    return ""
+
+
 @dataclass(frozen=True)
 class PermalinkCoords:
-    """一篇微信文章的官方永久链接坐标。"""
+    """一篇微信文章的官方永久链接坐标。
+
+    ``chksm`` 是可选的：它不是坐标本身，而是**抓这一篇所需的凭证**。
+    转载站/索引站给出的链接常常自带 ``chksm``，此时即使该公众号不在
+    本地账号池里、token store 没有它的 ``chksm``，也能直接抓回官方正文。
+    """
 
     biz: str
     mid: str
     idx: str
     sn: str
+    chksm: str = ""
 
     def key(self) -> tuple[str, str, str, str]:
         return (self.biz, self.mid, self.idx, self.sn)
@@ -180,6 +207,8 @@ class RecoveredArticle:
     mid: str
     idx: str
     source: str
+    # 公众号显示名。跨通道对齐账号时唯一两边共有的标识。
+    account_name: str = ""
 
     def source_article_id(self) -> str:
         """稳定的文章标识，用作 ``articles.source_article_id``。
@@ -311,7 +340,13 @@ class PermalinkRecoveryClient:
             sn = params.get("sn", "")
             if not mid or not sn:
                 continue
-            coords = PermalinkCoords(biz=biz, mid=mid, idx=params.get("idx", "1"), sn=sn)
+            coords = PermalinkCoords(
+                biz=biz,
+                mid=mid,
+                idx=params.get("idx", "1"),
+                sn=sn,
+                chksm=params.get("chksm", ""),
+            )
             found.setdefault(coords.key(), coords)
         return list(found.values())
 
@@ -343,6 +378,7 @@ class PermalinkRecoveryClient:
             "digest": _decode_js_escapes(html.unescape(digest.group(1)).strip()) if digest else "",
             "cover_url": html.unescape(image.group(1)).strip() if image else "",
             "published_at": published,
+            "account_name": _parse_account_name(body),
         }
 
     # -- 抓取 ---------------------------------------------------------------
@@ -365,7 +401,7 @@ class PermalinkRecoveryClient:
 
         返回 ``(元数据, 页面内发现的永久链接, 是否成功)``。
         """
-        chksm = self._tokens.get(coords.biz)
+        chksm = self._tokens.get(coords.biz) or coords.chksm
         if not chksm:
             return {}, [], False
         query = urllib.parse.urlencode(
@@ -379,6 +415,8 @@ class PermalinkRecoveryClient:
         if not metadata.get("title"):
             # 「参数错误」/「环境异常」页没有 og:title，视为失败。
             return {}, [], False
+        # 抓通了才认这个 chksm，避免把失效凭证写进 token store。
+        self._tokens.put(coords.biz, chksm)
         self._tokens.learn_from(body)
         return metadata, self.parse_permalinks(body), True
 
@@ -485,6 +523,7 @@ class PermalinkRecoveryRunner:
             mid=coords.mid,
             idx=coords.idx,
             source=source,
+            account_name=metadata.get("account_name", ""),
         )
 
 
