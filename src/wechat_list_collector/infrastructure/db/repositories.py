@@ -1105,12 +1105,22 @@ class CollectionRepository:
             return dict(row) if row else None
 
     def enabled_account_ids(self) -> list[str]:
+        """Enabled accounts that can actually be collected through the fakeid channel.
+
+        池外公众号（只有微信原文永久链接，没有微信读书 fakeid）必须被排除：
+        把它们放进 fakeid 队列只会产出永远跑不动的任务。它们仍保留在账号表里，
+        继续由永久链接恢复通道负责。
+        """
         with self.engine.connect() as connection:
             return [
                 str(value)
                 for value in connection.execute(
                     select(official_accounts.c.id)
-                    .where(official_accounts.c.enabled == 1, official_accounts.c.archived_at.is_(None))
+                    .where(
+                        official_accounts.c.enabled == 1,
+                        official_accounts.c.archived_at.is_(None),
+                        func.length(official_accounts.c.fakeid_ciphertext) > 0,
+                    )
                     .order_by(official_accounts.c.display_order, official_accounts.c.id)
                 ).scalars()
             ]

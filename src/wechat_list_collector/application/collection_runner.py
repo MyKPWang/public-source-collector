@@ -69,7 +69,41 @@ class CollectionRunner:
         self.summary_enricher = summary_enricher
 
     def run(self, job: AccountCollectionJob) -> AccountJobResult:
-        fakeid = self.fakeid_decoder.decrypt_text(job.fakeid_ciphertext)
+        # 池外公众号没有 fakeid：它们只能走永久链接恢复通道，永远进不了
+        # fakeid 采集通道。必须在解密之前判空——否则空密文会在解密里抛
+        # VaultError，越过任务边界把整轮 worker 一起带走。
+        if not job.fakeid_ciphertext:
+            self.logger.warning(
+                "account_fakeid_unavailable",
+                extra={"operation": "collect_account", "account_id": job.account_id},
+            )
+            return self._result(
+                RunAccountStatus.FAILED,
+                0,
+                0,
+                0,
+                0,
+                0,
+                "",
+                "FAKEID_UNAVAILABLE",
+            )
+        try:
+            fakeid = self.fakeid_decoder.decrypt_text(job.fakeid_ciphertext)
+        except Exception as error:  # noqa: BLE001 - 单账号解密失败不得越过任务边界
+            self.logger.warning(
+                "account_fakeid_decrypt_failed",
+                extra={"operation": "collect_account", "account_id": job.account_id},
+            )
+            return self._result(
+                RunAccountStatus.FAILED,
+                0,
+                0,
+                0,
+                0,
+                0,
+                "",
+                "FAKEID_DECRYPT_FAILED",
+            )
         seen_article_ids: set[str] = set()
         first_head = ""
         page_count = request_count = fetched_count = new_count = updated_count = 0
